@@ -7,9 +7,12 @@ from langchain.vectorstores import Chroma
 from langchain.vectorstores import FAISS
 from langchain.llms import OpenAI
 from langchain.prompts.prompt import PromptTemplate
+from dotenv import load_dotenv
+import os
 
-apikey="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"
-OPENAI_KEY= apikey
+load_dotenv()
+
+OPENAI_KEY = os.getenv("apikey")
 
 template = """
   You are an AI Lawyer. Conversation between a human and an AI lawyer and related context are given. Use the following pieces of context to answer the question at the end. If you don't know the answer or question is not related to law, just say that you don't know, don't try to make up an answer.
