@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from llm import chat
+from llm import chat, memory_clear, chatcusttomer
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -19,4 +19,14 @@ class Message(BaseModel):
 @app.post("/chat")
 async def send_message(data: Message, response_class=None, response_content_type="text/plain"):
     res = chat(data.message)
+    return str(res)
+
+@app.post("/new")
+async def clear(response_class=None, response_content_type="text/plain"):
+    res = memory_clear()
+    return res
+
+@app.post("/free")
+async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+    res = chatcusttomer(data.message)
     return str(res)
