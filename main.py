@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from DatabaseCreator import Delete_index, CreateDatabase
-from llm import chatfree, chatpro, chatEntaprices
+from llm import chatfree, chatpro, chatEntaprices, deletechat
 
 app = FastAPI()
 
@@ -16,36 +16,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Message(BaseModel):
+class Message1(BaseModel):
+    message: str
+    session_id: str
+
+class Message2(BaseModel):
+    enterprise_id: str
+    url: str
+class Message3(BaseModel):
+    enterprise_id: str
+class Message4(BaseModel):
     message: str
     session_id: str
     enterprise_id: str
-    url: str
+class Message5(BaseModel):
+    session_id: str
+
 
 @app.post("/pro")
-async def send_message(data: Message, response_class=None, response_content_type="text/plain"):
+async def send_message(data : Message1, response_class=None, response_content_type="text/plain"):
     res = chatpro(data.message,data.session_id)
     return str(res)
 
 
 @app.post("/free")
-async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+async def send_messages(data : Message1, response_class=None, response_content_type="text/plain"):
     res = chatfree(data.message,data.session_id)
     return str(res)
 
 @app.post("/CreateDatabase")
-async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+async def send_messages(data : Message2, response_class=None, response_content_type="text/plain"):
     res = CreateDatabase(data.enterprise_id,data.url)
     if res:
         return "Created Successfully"
 
 @app.delete("/DeleteDatabase")
-async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+async def send_messages(data : Message3, response_class=None, response_content_type="text/plain"):
     Delete_index(data.enterprise_id)
     return "Deleted Successfully"
 @app.post("/enterprise")
-async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+async def send_messages(data : Message1, response_class=None, response_content_type="text/plain"):
     res = chatEntaprices(data.message,data.session_id,data.enterprise_id)
+    return str(res)
+@app.post("/deletechat")
+async def send_messages(data : Message5, response_class=None, response_content_type="text/plain"):
+    res = deletechat(data.session_id)
     return str(res)
 @app.post("/test")
 async def send_messages(response_class=None, response_content_type="text/plain"):

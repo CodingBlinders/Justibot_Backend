@@ -119,3 +119,13 @@ def chatEntaprices(query,session_id,enterprise_id):
     chat_message_history.add_user_message(query)
     chat_message_history.add_ai_message(res['answer'])
     return res['answer']
+
+def deletechat(session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+    chat_message_history.clear()
+    return "Chat history deleted successfully"
