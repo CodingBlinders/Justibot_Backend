@@ -1,60 +1,121 @@
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import openai
+from langchain_openai import OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory, ConversationSummaryBufferMemory
-from langchain.document_loaders import PyPDFLoader
-from langchain.vectorstores import Chroma
-from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
+from pinecone import Pinecone as pinecone
+from langchain_community.vectorstores import Pinecone
 from langchain.prompts.prompt import PromptTemplate
 from dotenv import load_dotenv
 import os
+
+from langchain_community.chat_message_histories import MongoDBChatMessageHistory
 
 from promptTemplates import template, template2
 
 load_dotenv()
 
 OPENAI_KEY = os.getenv("apikey")
+PINECONE_API_KEY=os.getenv("PINECONE_API_KEY")
+os.environ["PINECONE_API_KEY"] =PINECONE_API_KEY
+
 
 prompt = PromptTemplate(input_variables=["chat_history", "question", "context"], template=template)
 prompt2 = PromptTemplate(input_variables=["chat_history", "question", "context"], template=template2)
 
-
+pc = pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index("justibot")
 embeddings = OpenAIEmbeddings(openai_api_key = OPENAI_KEY)
-memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    ai_prefix="AI Lawyer",
-    return_messages=True
-)
+
 
 openai = ChatOpenAI(temperature=1, openai_api_key=OPENAI_KEY, model="gpt-3.5-turbo")
-faiss_db = FAISS.load_local("faiss_index", embeddings)
+vectorstore = Pinecone(embedding=embeddings, index=index, text_key="text")
 
 
 
-chat_llm = ConversationalRetrievalChain.from_llm(openai, faiss_db.as_retriever(search_kwargs={"k": 8}), memory=memory,combine_docs_chain_kwargs={"prompt": prompt}, verbose=True)
-chat_llm2 = ConversationalRetrievalChain.from_llm(openai, faiss_db.as_retriever(search_kwargs={"k": 5}), memory=memory,combine_docs_chain_kwargs={"prompt": prompt2}, verbose=True)
+
+chat_llm_free = ConversationalRetrievalChain.from_llm(
+    openai,
+    retriever=vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 3, 'fetch_k': 30}),
+    combine_docs_chain_kwargs={"prompt": prompt2},
+    verbose=True,
+)
+chat_llm_pro = ConversationalRetrievalChain.from_llm(
+    openai,
+    retriever=vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 8, 'fetch_k': 50}),
+    combine_docs_chain_kwargs={"prompt": prompt},
+    verbose=True,
+)
 
 
-def memory_clear():
-    memory.clear()
-    return "New Chat Created"
-def chat(question):
-    chat_history= memory.load_memory_variables({})
 
-    res = chat_llm({"question": question, "chat_history": chat_history})
-    # n=0
-    # memory.clear()
-    memory.save_context({"input": question}, {"output": res['answer']})
+
+
+def get_messages_within_limit(messages, limit):
+    total_chars = 0
+    selected_messages = []
+
+    # Iterate through messages in reverse order
+    for message in reversed(messages):
+        message_length = len(message.content)
+
+        # Check if adding this message exceeds the limit
+        if total_chars + message_length <= limit:
+            selected_messages.insert(0, message)  # Insert at the beginning to maintain original order
+            total_chars += message_length
+        else:
+            break  # Stop iterating once the limit is reached
+
+    return selected_messages
+
+
+
+def chatfree(query,session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_free({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
     return res['answer']
 
-# create_db("law.pdf")
 
-def chatcusttomer(question):
-    chat_history= memory.load_memory_variables({})
-    res = chat_llm2({"question": question, "chat_history": chat_history})
-    # n=0
-    # memory.clear()
-    memory.save_context({"input": question}, {"output": res['answer']})
+def chatpro(query,session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_pro({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
+    return res['answer']
+
+def chatEntaprices(query,session_id,enterprise_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+    index = pc.Index(enterprise_id)
+    ownedvectorstore = Pinecone(embedding=embeddings, index=index, text_key="text")
+    chat_llm_enterprices = ConversationalRetrievalChain.from_llm(
+        openai,
+        retriever=ownedvectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 8, 'fetch_k': 50}),
+        combine_docs_chain_kwargs={"prompt": prompt},                                                       #prompt2
+        verbose=True,
+    )
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_enterprices({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
     return res['answer']
