@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from llm import chat, memory_clear, chatcusttomer
+
 from fastapi.middleware.cors import CORSMiddleware
+
+from DatabaseCreator import Delete_index, CreateDatabase
+from llm import chatfree, chatpro, chatEntaprices
 
 app = FastAPI()
 
@@ -15,20 +18,34 @@ app.add_middleware(
 
 class Message(BaseModel):
     message: str
+    session_id: str
+    enterprise_id: str
+    url: str
 
-@app.post("/chat")
+@app.post("/pro")
 async def send_message(data: Message, response_class=None, response_content_type="text/plain"):
-    res = chat(data.message)
+    res = chatpro(data.message,data.session_id)
     return str(res)
 
-@app.post("/new")
-async def clear(response_class=None, response_content_type="text/plain"):
-    res = memory_clear()
-    return res
 
 @app.post("/free")
 async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
-    res = chatcusttomer(data.message)
+    res = chatfree(data.message,data.session_id)
+    return str(res)
+
+@app.post("/CreateDatabase")
+async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+    res = CreateDatabase(data.enterprise_id,data.url)
+    if res:
+        return "Created Successfully"
+
+@app.delete("/DeleteDatabase")
+async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+    Delete_index(data.enterprise_id)
+    return "Deleted Successfully"
+@app.post("/enterprise")
+async def send_messages(data: Message, response_class=None, response_content_type="text/plain"):
+    res = chatEntaprices(data.message,data.session_id,data.enterprise_id)
     return str(res)
 @app.post("/test")
 async def send_messages(response_class=None, response_content_type="text/plain"):
