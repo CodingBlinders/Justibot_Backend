@@ -1,113 +1,132 @@
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.chat_models import ChatOpenAI
+import openai
+from langchain_openai import OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory, ConversationSummaryBufferMemory
-from langchain.document_loaders import PyPDFLoader
-from langchain.vectorstores import Chroma
-from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
+from pinecone import Pinecone as pinecone
+from langchain_community.vectorstores import Pinecone
 from langchain.prompts.prompt import PromptTemplate
 from dotenv import load_dotenv
 import os
 
+from langchain_community.chat_message_histories import MongoDBChatMessageHistory
+
+from promptTemplates import template, template2
+
 load_dotenv()
 
 OPENAI_KEY = os.getenv("apikey")
+PINECONE_API_KEY=os.getenv("PINECONE_API_KEY")
+print(PINECONE_API_KEY)
+os.environ["PINECONE_API_KEY"] =PINECONE_API_KEY
 
-template = """
-  You are an AI Lawyer. Conversation between a human and an AI lawyer and related context are given. Use the following pieces of context to answer the question at the end. If question is not related to law, just say that "I cannot Assist with that! It's not related for Law. ", don't try to make up an answer.
-  The laws have sections and subsections. A section start with number and sections (ex: "4.") and  also has Law number  (ex: [2, 12 of 1997]) also has subsection with (1), (2) like wise.
-  you should follow below template. related data provide in "CONTEXT:"
-  ANSWER TEMPLATE:
-    [Title]
-    [Law sections and its subsections related to question]
-    [Answer]
-    [Conclusion]
-  CONTEXT:
-  {context}
-  
-  QUESTION: 
-  {question}
-
-  CHAT HISTORY:
-  {chat_history}
-  
-  ANSWER:
-  """
-
-template2 = """
-  You are an AI Lawyer. Conversation between a human and an AI lawyer and related context are given. Use the following pieces of context to answer the question at the end. If question is not related to law, just say that "I cannot Assist with that! It's not related for Law. ", don't try to make up an answer.
-  you should follow below template. also  related srilanka law data provide in "CONTEXT:" your response is not going to very law technical. so please write with law and explations and describe how to do and answer question and also you give instructions as AI Lawyer
-  ANSWER TEMPLATE:
-    [Title]
-    [Answer]
-    [Conclusion]
-  CONTEXT:
-  {context}
-
-  QUESTION: 
-  {question}
-
-  CHAT HISTORY:
-  {chat_history}
-
-  ANSWER:
-  """
 
 prompt = PromptTemplate(input_variables=["chat_history", "question", "context"], template=template)
 prompt2 = PromptTemplate(input_variables=["chat_history", "question", "context"], template=template2)
 
-# define embedding
-embeddings = OpenAIEmbeddings(
-    openai_api_key = OPENAI_KEY
+pc = pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index("justibot")
+embeddings = OpenAIEmbeddings(openai_api_key = OPENAI_KEY)
+
+
+openai = ChatOpenAI(temperature=1, openai_api_key=OPENAI_KEY, model="ft:gpt-3.5-turbo-1106:personal:justibot-1-0:9QdL7lzy")
+vectorstore = Pinecone(embedding=embeddings, index=index, text_key="text")
+
+
+
+
+chat_llm_free = ConversationalRetrievalChain.from_llm(
+    openai,
+    retriever=vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 3, 'fetch_k': 30}),
+    combine_docs_chain_kwargs={"prompt": prompt2},
+    verbose=True,
 )
-# define memory
-memory = ConversationBufferMemory(memory_key="chat_history", ai_prefix="AI Lawyer", return_messages=True)
+chat_llm_pro = ConversationalRetrievalChain.from_llm(
+    openai,
+    retriever=vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 8, 'fetch_k': 50}),
+    combine_docs_chain_kwargs={"prompt": prompt},
+    verbose=True,
+)
 
-openai = OpenAI(temperature=1, openai_api_key=OPENAI_KEY)
-# memory = ConversationSummaryBufferMemory(llm=openai, max_token_limit=1000)
-# db3 = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
-faiss_db = FAISS.load_local("faiss_index", embeddings)
 
 
-# define chain
-chat_llm = ConversationalRetrievalChain.from_llm(openai, faiss_db.as_retriever(search_kwargs={"k": 8}), memory=memory,combine_docs_chain_kwargs={"prompt": prompt}, verbose=True)
-chat_llm2 = ConversationalRetrievalChain.from_llm(openai, faiss_db.as_retriever(search_kwargs={"k": 5}), memory=memory,combine_docs_chain_kwargs={"prompt": prompt2}, verbose=True)
 
-def create_db(file):
-    # load documents
-    loader = PyPDFLoader(file)
-    documents = loader.load()
-    documents = documents[:16]
-    # split documents
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=80)
-    docs = text_splitter.split_documents(documents)
-    db = FAISS.from_documents(docs, embeddings)
-    db.save_local("faiss_index")
-    # vectordb.persist()
 
-def get_chat_history():
-    return memory.load_memory_variables({})
-    # return ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+def get_messages_within_limit(messages, limit):
+    total_chars = 0
+    selected_messages = []
 
-def memory_clear():
-    memory.clear()
-    return "New Chat Created"
-def chat(question):
-    chat_history= get_chat_history()
+    # Iterate through messages in reverse order
+    for message in reversed(messages):
+        message_length = len(message.content)
 
-    res = chat_llm({"question": question, "chat_history": chat_history})
-    # n=0
-    # memory.clear()
-    memory.save_context({"input": question}, {"output": res['answer']})
+        # Check if adding this message exceeds the limit
+        if total_chars + message_length <= limit:
+            selected_messages.insert(0, message)  # Insert at the beginning to maintain original order
+            total_chars += message_length
+        else:
+            break  # Stop iterating once the limit is reached
+
+    return selected_messages
+
+
+
+def chatfree(query,session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_free({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
     return res['answer']
 
-# create_db("law.pdf")
 
-def chatcusttomer(question):
-    chat_history= get_chat_history()
-    res = chat_llm2({"question": question, "chat_history": chat_history})
-    # n=0
-    # memory.clear()
-    memory.save_context({"input": question}, {"output": res['answer']})
+def chatpro(query,session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_pro({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
     return res['answer']
+
+def chatEntaprices(query,session_id,enterprise_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+    index = pc.Index(enterprise_id)
+    ownedvectorstore = Pinecone(embedding=embeddings, index=index, text_key="text")
+    chat_llm_enterprices = ConversationalRetrievalChain.from_llm(
+        openai,
+        retriever=ownedvectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 8, 'fetch_k': 50}),
+        combine_docs_chain_kwargs={"prompt": prompt},                                                       #prompt2
+        verbose=True,
+    )
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    res = chat_llm_enterprices({"question": query, "chat_history": selected_messages})
+    chat_message_history.add_user_message(query)
+    chat_message_history.add_ai_message(res['answer'])
+    return res['answer']
+
+def deletechat(session_id):
+    chat_message_history = MongoDBChatMessageHistory(
+        session_id=session_id,
+        connection_string="mongodb+srv://justibotadmin:C5ymKcaFMnvANEwj@serverlessinstance0.uvfg4ot.mongodb.net/?retryWrites=true&w=majority",
+        database_name="ChatData",
+        collection_name="chat_histories",
+    )
+    chat_message_history.clear()
+    return "Chat history deleted successfully"
