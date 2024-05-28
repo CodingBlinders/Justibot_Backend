@@ -1,4 +1,4 @@
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 import openai
 from langchain_openai import OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
@@ -17,6 +17,7 @@ load_dotenv()
 
 OPENAI_KEY = os.getenv("apikey")
 PINECONE_API_KEY=os.getenv("PINECONE_API_KEY")
+print(PINECONE_API_KEY)
 os.environ["PINECONE_API_KEY"] =PINECONE_API_KEY
 
 
@@ -28,7 +29,7 @@ index = pc.Index("justibot")
 embeddings = OpenAIEmbeddings(openai_api_key = OPENAI_KEY)
 
 
-openai = ChatOpenAI(temperature=1, openai_api_key=OPENAI_KEY, model="gpt-3.5-turbo")
+openai = ChatOpenAI(temperature=1, openai_api_key=OPENAI_KEY, model="ft:gpt-3.5-turbo-1106:personal:justibot-1-0:9QdL7lzy")
 vectorstore = Pinecone(embedding=embeddings, index=index, text_key="text")
 
 

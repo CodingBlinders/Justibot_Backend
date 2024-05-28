@@ -5,7 +5,7 @@ FROM python:3.9
 WORKDIR /app
 
 # Copy the requirements file to the container
-COPY requirements.txt .
+COPY ../../../PycharmProjects/pythonProject1/requirements.txt .
 
 # Install project dependencies
 RUN pip install -r requirements.txt
