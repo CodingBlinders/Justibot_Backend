@@ -79,7 +79,7 @@ def chatfree(query,session_id):
         collection_name="chat_histories",
     )
 
-    selected_messages = get_messages_within_limit(chat_message_history.messages, 1000)
+    selected_messages = get_messages_within_limit(chat_message_history.messages, 2000)
     res = chat_llm_free({"question": query, "chat_history": selected_messages})
     chat_message_history.add_user_message(query)
     chat_message_history.add_ai_message(res['answer'])
