@@ -1,0 +1,11 @@
+version: "3.3"
+
+services:
+  fastapi-app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+    volumes:
+      - ./target:/app/target
